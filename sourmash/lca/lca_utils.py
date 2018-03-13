@@ -14,7 +14,7 @@ except ImportError:
     from itertools import izip_longest as zip_longest
 import pprint
 
-from .._minhash import get_max_hash_for_scaled
+from ..minhash import get_max_hash_for_scaled
 from ..logging import notify, error
 
 # type to store an element in a taxonomic lineage

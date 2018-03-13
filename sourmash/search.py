@@ -6,7 +6,7 @@ from .logging import notify, error
 from .signature import SourmashSignature
 from .sbtmh import search_minhashes, search_minhashes_containment
 from .sbtmh import SearchMinHashesFindBest, SearchMinHashesFindBestIgnoreMaxHash
-from ._minhash import get_max_hash_for_scaled
+from .minhash import get_max_hash_for_scaled
 
 
 # generic SearchResult across individual signatures + SBTs.

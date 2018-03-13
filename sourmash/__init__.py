@@ -7,7 +7,10 @@ import re
 import math
 import os
 
-from ._minhash import (MinHash, get_minhash_default_seed, get_minhash_max_hash)
+from ._lowlevel import ffi, lib
+ffi.init_once(lib.sourmash_init, 'init')
+
+from .minhash import (MinHash, get_minhash_default_seed, get_minhash_max_hash)
 DEFAULT_SEED = get_minhash_default_seed()
 MAX_HASH = get_minhash_max_hash()
 

@@ -13,9 +13,9 @@ dist
 build
 sourmash.egg-info
 .ipynb_checkpoints
-_minhash.so
 .cache
 *.so
 .coverage
-sourmash_lib/_minhash.cpp
-sourmash/_minhash.cpp
+.tox
+.eggs
+rust/target

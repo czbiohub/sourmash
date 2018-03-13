@@ -41,11 +41,11 @@ import pickle
 
 import pytest
 
-from sourmash_lib._minhash import (MinHash, hash_murmur, dotproduct,
-                                   get_scaled_for_max_hash,
-                                   get_max_hash_for_scaled)
+from sourmash.minhash import (MinHash, hash_murmur, dotproduct,
+                              get_scaled_for_max_hash,
+                              get_max_hash_for_scaled)
 from . import sourmash_tst_utils as utils
-from sourmash_lib import signature
+from sourmash import signature
 
 # add:
 # * get default params from Python
@@ -68,6 +68,7 @@ def test_basic_dna(track_abundance):
     print(a, b)
     assert a == b
     assert len(b) == 1
+    assert a[0] == b[0] == 12415348535738636339
 
 
 def test_bytes_dna(track_abundance):
@@ -286,38 +287,38 @@ def test_intersection_1(track_abundance):
     common = set(a.get_mins())
     combined_size = 3
 
-    intersection, size = a.intersection(b)
+    intersection, size = a.intersection(b, in_common=True)
     assert intersection == common
     assert combined_size == size
 
-    intersection, size = b.intersection(b)
+    intersection, size = b.intersection(b, in_common=True)
     assert intersection == common
     assert combined_size == size
 
-    intersection, size = b.intersection(a)
+    intersection, size = b.intersection(a, in_common=True)
     assert intersection == common
     assert combined_size == size
 
-    intersection, size = a.intersection(a)
+    intersection, size = a.intersection(a, in_common=True)
     assert intersection == common
     assert combined_size == size
 
     # add same sequence again
     b.add_sequence('TGCCGCCCAGCA')
 
-    intersection, size = a.intersection(b)
+    intersection, size = a.intersection(b, in_common=True)
     assert intersection == common
     assert combined_size == size
 
-    intersection, size = b.intersection(b)
+    intersection, size = b.intersection(b, in_common=True)
     assert intersection == common
     assert combined_size == size
 
-    intersection, size = b.intersection(a)
+    intersection, size = b.intersection(a, in_common=True)
     assert intersection == common
     assert combined_size == size
 
-    intersection, size = a.intersection(a)
+    intersection, size = a.intersection(a, in_common=True)
     assert intersection == common
     assert combined_size == size
 
@@ -327,18 +328,18 @@ def test_intersection_1(track_abundance):
     new_in_common = set(a.get_mins()).intersection(set(b.get_mins()))
     new_combined_size = 8
 
-    intersection, size = a.intersection(b)
+    intersection, size = a.intersection(b, in_common=True)
     assert intersection == new_in_common
     assert size == new_combined_size
 
-    intersection, size = b.intersection(a)
+    intersection, size = b.intersection(a, in_common=True)
     assert intersection == new_in_common
     assert size == new_combined_size
 
-    intersection, size = a.intersection(a)
+    intersection, size = a.intersection(a, in_common=True)
     assert intersection == set(a.get_mins())
 
-    intersection, size = b.intersection(b)
+    intersection, size = b.intersection(b, in_common=True)
     assert intersection == set(b.get_mins())
 
 
