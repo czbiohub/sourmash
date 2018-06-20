@@ -4,29 +4,42 @@ Save and load MinHash sketches in a JSON format, along with some metadata.
 """
 from __future__ import print_function
 import hashlib
-from . import signature_json
-from .logging import error
 
 import io
 import gzip
 import bz2file
 
+from . import signature_json
+from .logging import error
+
+from .utils import RustObject, rustcall
+
+
 SIGNATURE_VERSION=0.4
 
 
-class SourmashSignature(object):
+class SourmashSignature(RustObject):
     "Main class for signature information."
 
     def __init__(self, minhash, name='', filename=''):
-        self.d = {}
-        self.d['class'] = 'sourmash_signature'
+        self._objptr = lib.signature_new()
+
         if name:
-            self.d['name'] = name
+            self.name = name
         if filename:
-            self.d['filename'] = filename
+            self.filename = filename
 
         self.minhash = minhash
-        self.d['license'] = 'CC0'
+
+        self.__dealloc_func__ = lib.signature_free
+
+    @property
+    def minhash(self):
+        return self._methodcall(lib.signature_first_mh, value)
+
+    @minhash.setter
+    def minhash(self, value):
+        self._methodcall(lib.signature_push_mh, value)
 
     def __hash__(self):
         return hash(self.md5sum())
@@ -55,24 +68,44 @@ class SourmashSignature(object):
 
         return self.minhash == other.minhash
 
+    @property
     def name(self):
         "Return as nice a name as possible, defaulting to md5 prefix."
-        if 'name' in self.d:
-            return self.d.get('name')
-        elif 'filename' in self.d:
-            return self.d.get('filename')
+        name = decode_str(self._methodcall(lib.signature_get_name, free=True))
+        filename = decode_str(self._methodcall(lib.signature_get_name, free=True))
+
+        if name:
+            return name
+        elif filename:
+            return filename
         else:
             return self.md5sum()[:8]
 
+    @name.setter
+    def name(self, value):
+        self._methodcall(lib.signature_set_name, to_bytes(value))
+
+    @property
+    def filename(self):
+        return decode_str(self._methodcall(lib.signature_get_name, free=True))
+
+    @filename.setter
+    def filename(self, value):
+        self._methodcall(lib.signature_set_filename, to_bytes(value))
+
     def _display_name(self, max_length):
-        if 'name' in self.d:
-            name = self.d['name']
-            if len(name) > max_length:
-                name = name[:max_length - 3] + '...'
-        elif 'filename' in self.d:
-            name = self.d['filename']
-            if len(name) > max_length:
-                name = '...' + name[-max_length + 3:]
+        name = self.name
+        filename = self.filename
+
+        if name:
+            if name == filename:
+                name = self.d['filename']
+                if len(name) > max_length:
+                    name = '...' + name[-max_length + 3:]
+            else:
+                name = self.d['name']
+                if len(name) > max_length:
+                    name = name[:max_length - 3] + '...'
         else:
             name = self.md5sum()[:8]
         assert len(name) <= max_length
