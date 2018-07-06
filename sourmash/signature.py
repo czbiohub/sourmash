@@ -9,10 +9,12 @@ import io
 import gzip
 import bz2file
 
-from . import signature_json
 from .logging import error
+from .minhash import MinHash
 
-from .utils import RustObject, rustcall
+from ._compat import to_bytes
+from ._lowlevel import ffi, lib
+from .utils import RustObject, rustcall, decode_str
 
 
 SIGNATURE_VERSION=0.4
@@ -25,7 +27,7 @@ class SourmashSignature(RustObject):
         self._objptr = lib.signature_new()
 
         if name:
-            self.name = name
+            self._name = name
         if filename:
             self.filename = filename
 
@@ -35,11 +37,14 @@ class SourmashSignature(RustObject):
 
     @property
     def minhash(self):
-        return self._methodcall(lib.signature_first_mh, value)
+        # TODO: set 'shared' in this call?
+        #return MinHash._from_objptr(self._methodcall(lib.signature_first_mh))
+        return self._methodcall(lib.signature_first_mh)
 
     @minhash.setter
     def minhash(self, value):
-        self._methodcall(lib.signature_push_mh, value)
+        # TODO: validate value is a MinHash
+        self._methodcall(lib.signature_push_mh, value._objptr)
 
     def __hash__(self):
         return hash(self.md5sum())
@@ -69,10 +74,17 @@ class SourmashSignature(RustObject):
         return self.minhash == other.minhash
 
     @property
+    def _name(self):
+        return decode_str(self._methodcall(lib.signature_get_name), free=True)
+
+    @_name.setter
+    def _name(self, value):
+        self._methodcall(lib.signature_set_name, to_bytes(value))
+
     def name(self):
         "Return as nice a name as possible, defaulting to md5 prefix."
-        name = decode_str(self._methodcall(lib.signature_get_name, free=True))
-        filename = decode_str(self._methodcall(lib.signature_get_name, free=True))
+        name = self._name
+        filename = self.filename
 
         if name:
             return name
@@ -81,20 +93,16 @@ class SourmashSignature(RustObject):
         else:
             return self.md5sum()[:8]
 
-    @name.setter
-    def name(self, value):
-        self._methodcall(lib.signature_set_name, to_bytes(value))
-
     @property
     def filename(self):
-        return decode_str(self._methodcall(lib.signature_get_name, free=True))
+        return decode_str(self._methodcall(lib.signature_get_name), free=True)
 
     @filename.setter
     def filename(self, value):
         self._methodcall(lib.signature_set_filename, to_bytes(value))
 
     def _display_name(self, max_length):
-        name = self.name
+        name = self._name
         filename = self.filename
 
         if name:
@@ -242,8 +250,12 @@ def load_signatures(data, ksize=None, select_moltype=None,
 
     try:
         # JSON format
-        for sig in signature_json.load_signatures_json(data,
-                                                     ignore_md5sum=ignore_md5sum):
+        if is_fp:
+            sigs = rustcall(lib.signatures_load_file, data, ignore_md5sum)
+        else:
+            sigs = rustcall(lib.signatures_load_buffer, data, ignore_md5sum)
+
+        for sig in sigs:
             if not ksize or ksize == sig.minhash.ksize:
                 if not select_moltype or \
                      sig.minhash.is_molecule_type(select_moltype):
@@ -279,4 +291,14 @@ def load_one_signature(data, ksize=None, select_moltype=None,
 
 def save_signatures(siglist, fp=None):
     "Save multiple signatures into a JSON string (or into file handle 'fp')"
-    return signature_json.save_signatures_json(siglist, fp)
+    collected = [obj._get_objptr() for obj in siglist]
+    siglist_c = ffi.new("Signature*[]", collected)
+
+    if fp:
+        fp_c = ffi.cast("FILE *", fp)
+        raise NotImplementedError()
+        buf = rustcall(lib.signatures_save_file, siglist_c, len(collected), fp_c)
+    else:
+        buf = rustcall(lib.signatures_save_buffer, siglist_c, len(collected))
+
+    return decode_str(buf, free=True)

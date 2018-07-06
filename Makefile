@@ -16,7 +16,7 @@ dist: FORCE
 	$(PYTHON) setup.py sdist
 
 test: all
-	pip install '.[test]'
+	pip install pytest pytest-cov numpy matplotlib scipy recommonmark
 	$(PYTHON) -m pytest
 
 doc: .PHONY

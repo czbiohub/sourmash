@@ -4,8 +4,8 @@ from __future__ import unicode_literals, division
 import math
 import copy
 
-from ._compat import string_types, range_type
 from ._lowlevel import ffi, lib
+from ._compat import to_bytes
 from .utils import RustObject, rustcall
 
 # default MurmurHash seed
@@ -38,15 +38,6 @@ def get_scaled_for_max_hash(max_hash):
     if max_hash == 0:
         return 0
     return int(round(get_minhash_max_hash() / max_hash, 0))
-
-
-def to_bytes(s):
-    if not isinstance(s, string_types + (bytes,)):
-        raise TypeError("Requires a string-like sequence")
-
-    if isinstance(s, string_types):
-        s = s.encode('utf-8')
-    return s
 
 
 def hash_murmur(kmer, seed=MINHASH_DEFAULT_SEED):

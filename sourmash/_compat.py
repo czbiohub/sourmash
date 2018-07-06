@@ -22,3 +22,11 @@ else:
     itervalues = lambda x: x.values()
     NUL = 0
     implements_to_string = lambda x: x
+
+def to_bytes(s):
+    if not isinstance(s, string_types + (bytes,)):
+        raise TypeError("Requires a string-like sequence")
+
+    if isinstance(s, string_types):
+        s = s.encode('utf-8')
+    return s
