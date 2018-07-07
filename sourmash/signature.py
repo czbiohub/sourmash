@@ -66,12 +66,7 @@ class SourmashSignature(RustObject):
         return m.hexdigest()
 
     def __eq__(self, other):
-        allkeys = set(self.d.keys()).union(set(other.d.keys()))
-        for k in allkeys:
-            if self.d.get(k) != other.d.get(k):
-                return False
-
-        return self.minhash == other.minhash
+        return self._methodcall(lib.signature_eq, self._objptr, other._objptr)
 
     @property
     def _name(self):
@@ -251,11 +246,15 @@ def load_signatures(data, ksize=None, select_moltype=None,
     try:
         # JSON format
         if is_fp:
-            sigs = rustcall(lib.signatures_load_file, data, ignore_md5sum)
+            sigs_ptr = rustcall(lib.signatures_load_file, data, ignore_md5sum)
+            raise NotImplementedError()
         else:
-            sigs = rustcall(lib.signatures_load_buffer, data, ignore_md5sum)
+            sigs_ptr = rustcall(lib.signatures_load_buffer, data.encode('utf-8'), ignore_md5sum)
 
-        for sig in sigs:
+        sigs = ffi.unpack(sigs_ptr, 2)
+
+        for sig_c in sigs:
+            sig = SourmashSignature._from_objptr(sig_c)
             if not ksize or ksize == sig.minhash.ksize:
                 if not select_moltype or \
                      sig.minhash.is_molecule_type(select_moltype):
