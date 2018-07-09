@@ -75,7 +75,6 @@ class MinHash(RustObject):
 
     def __init__(self, n, ksize, is_protein=False, track_abundance=False,
                  seed=MINHASH_DEFAULT_SEED, max_hash=0, mins=None, scaled=0):
-        self.track_abundance = track_abundance
 
         if max_hash and scaled:
             raise ValueError('cannot set both max_hash and scaled')
@@ -186,6 +185,10 @@ class MinHash(RustObject):
         a = set(self.get_mins())
         b = set(other.get_mins())
         return a - b
+
+    @property
+    def track_abundance(self):
+        return self._methodcall(lib.kmerminhash_track_abundance)
 
     @property
     def seed(self):

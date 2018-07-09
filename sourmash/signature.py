@@ -26,6 +26,8 @@ sig_refs = weakref.WeakKeyDictionary()
 
 class SourmashSignature(RustObject):
     "Main class for signature information."
+    _name = ''
+    filename = ''
 
     def __init__(self, minhash, name='', filename=''):
         self._objptr = lib.signature_new()
@@ -92,7 +94,7 @@ class SourmashSignature(RustObject):
 
     @property
     def filename(self):
-        return decode_str(self._methodcall(lib.signature_get_name), free=True)
+        return decode_str(self._methodcall(lib.signature_get_filename), free=True)
 
     @filename.setter
     def filename(self, value):
@@ -302,8 +304,8 @@ def save_signatures(siglist, fp=None):
     siglist_c = ffi.new("Signature*[]", collected)
 
     if fp:
-        fp_c = ffi.cast("FILE *", fp)
         raise NotImplementedError()
+        fp_c = ffi.cast("FILE *", fp)
         buf = rustcall(lib.signatures_save_file, siglist_c, len(collected), fp_c)
     else:
         buf = rustcall(lib.signatures_save_buffer, siglist_c, len(collected))
