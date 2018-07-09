@@ -4,6 +4,7 @@ Save and load MinHash sketches in a JSON format, along with some metadata.
 """
 from __future__ import print_function
 import hashlib
+import weakref
 
 import io
 import gzip
@@ -18,6 +19,9 @@ from .utils import RustObject, rustcall, decode_str
 
 
 SIGNATURE_VERSION=0.4
+
+
+sig_refs = weakref.WeakKeyDictionary()
 
 
 class SourmashSignature(RustObject):
@@ -37,9 +41,7 @@ class SourmashSignature(RustObject):
 
     @property
     def minhash(self):
-        # TODO: set 'shared' in this call?
-        #return MinHash._from_objptr(self._methodcall(lib.signature_first_mh))
-        return self._methodcall(lib.signature_first_mh)
+        return MinHash._from_objptr(self._methodcall(lib.signature_first_mh), shared=True)
 
     @minhash.setter
     def minhash(self, value):
@@ -66,7 +68,7 @@ class SourmashSignature(RustObject):
         return m.hexdigest()
 
     def __eq__(self, other):
-        return self._methodcall(lib.signature_eq, self._objptr, other._objptr)
+        return self._methodcall(lib.signature_eq, other._objptr)
 
     @property
     def _name(self):
@@ -243,18 +245,24 @@ def load_signatures(data, ksize=None, select_moltype=None,
                     raise
                 return
 
+    size = ffi.new("uintptr_t *")
     try:
         # JSON format
         if is_fp:
             sigs_ptr = rustcall(lib.signatures_load_file, data, ignore_md5sum)
             raise NotImplementedError()
         else:
-            sigs_ptr = rustcall(lib.signatures_load_buffer, data.encode('utf-8'), ignore_md5sum)
+            sigs_ptr = rustcall(lib.signatures_load_buffer, data.encode('utf-8'), ignore_md5sum, size)
 
-        sigs = ffi.unpack(sigs_ptr, 2)
+        size = ffi.unpack(size, 1)[0]
 
-        for sig_c in sigs:
-            sig = SourmashSignature._from_objptr(sig_c)
+        sigs = []
+        for i in range(size):
+            sig = SourmashSignature._from_objptr(sigs_ptr[i], shared=True)
+            sigs.append(sig)
+            sig_refs[sig] = sigs
+
+        for sig in sigs:
             if not ksize or ksize == sig.minhash.ksize:
                 if not select_moltype or \
                      sig.minhash.is_molecule_type(select_moltype):
