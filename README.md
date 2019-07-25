@@ -13,10 +13,6 @@ Usage:
     sourmash compare *.sig -o distances
     sourmash plot distances
 
-We have demo notebooks on binder that you can interact with:
-
-[![Binder](http://mybinder.org/badge.svg)](http://mybinder.org/repo/dib-lab/sourmash)
-
 Sourmash 1.0 is [published on JOSS](https://doi.org/10.21105/joss.00027); please cite that paper if you use sourmash (`doi: 10.21105/joss.00027`):.
 
 ----
@@ -39,12 +35,12 @@ We recommend using bioconda to install sourmash:
 ```
 conda install sourmash
 ```
-This will install the 2.0 pre-release series.
+This will install the latest stable version of sourmash 2.
 
-You can also use pip to install the pre-release like so:
+You can also use pip to install sourmash:
 
 ```
-pip install --pre sourmash
+pip install sourmash
 ```
 
 A quickstart tutorial [is available](https://sourmash.readthedocs.io/en/latest/tutorials.html).
@@ -67,7 +63,7 @@ For `search` and `gather` you also need `khmer` version 2.1+.
 Bioconda is a channel for the [conda](http://conda.pydata.org/docs/intro.html) package manager with a focus on bioinformatics software. After installing conda you will need to add the bioconda channel as well as the [other channels](https://bioconda.github.io/index.html#set-up-channels) bioconda depends on. Once you have setup bioconda, you can install sourmash by running:
 
 ```bash
-$ conda create -n sourmash_env sourmash python=3.6.4
+$ conda create -n sourmash_env -c conda-forge -c bioconda sourmash python=3.7
 $ source activate sourmash_env
 $ sourmash compute -h
 ```
