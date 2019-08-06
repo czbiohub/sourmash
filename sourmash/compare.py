@@ -1,18 +1,20 @@
-from itertools import combinations
+import itertools
+import math
 from functools import partial
 import os
 import tempfile
-from multiprocessing.pool import ThreadPool
-from scipy.spatial.distance import squareform
-
+import time
+import multiprocessing
 import numpy as np
+
+from .logging import notify, error, print_results
 
 
 def _compare_serial(siglist, ignore_abundance):
     n = len(siglist)
 
     # Combinations makes all unique sets of pairs, e.g. (A, B) but not (B, A)
-    iterator = combinations(range(n), 2)
+    iterator = itertools.combinations(range(n), 2)
 
     similarities = np.ones((n, n))
 
@@ -40,45 +42,92 @@ def memmap_siglist(siglist):
     return large_memmap
 
 
-def similarity(ignore_abundance, downsample, sig1, sig2):
+def similarity(sig1, sig2, ignore_abundance, downsample):
     "Compute similarity with the other MinHash signature."
     try:
-        return sig1.minhash.similarity(sig2.minhash, ignore_abundance)
+        sig = sig1.minhash.similarity(sig2.minhash, ignore_abundance)
+        return sig
     except ValueError as e:
         if 'mismatch in max_hash' in str(e) and downsample:
             xx = sig1.minhash.downsample_max_hash(sig2.minhash)
             yy = sig2.minhash.downsample_max_hash(sig1.minhash)
-            return similarity(xx, yy, ignore_abundance)
+            sig = similarity(xx, yy, ignore_abundance)
+            return sig
         else:
             raise
 
 
-def log_result(condensed, result):
-    # This is called whenever similarity() returns a result.
-    # condensed is modified only by the compare_all_pairs, not the pool workers.
-    condensed.append(result)
+def similarity_args(args, ignore_abundance, downsample):
+    return similarity(*args, ignore_abundance, downsample)
 
 
-def compare_all_pairs(siglist, ignore_abundance, n_jobs=None):
+def similarity_args_unpack(index, ignore_abundance, downsample, siglist):
+    startt = time.time()
+    sig_iterator = itertools.product([siglist[index]], siglist[index + 1:])
+    func = partial(similarity_args,
+                   ignore_abundance=ignore_abundance,
+                   downsample=downsample)
+    ret = list(map(func, sig_iterator))
+    notify("comparison for index {} done in {:.5f} seconds", index, time.time() - startt)
+    return ret
+
+
+def nCr(n, r):
+    f = math.factorial
+    return f(n) // (f(r) * f(n - r))
+
+
+def compare_all_pairs(siglist, ignore_abundance, downsample=False, n_jobs=None):
+
     if n_jobs is None or n_jobs == 1:
         similarities = _compare_serial(siglist, ignore_abundance)
     else:
-        # Create a memory-mapped array
-        memmapped = memmap_siglist(siglist)
-        sig_iterator = combinations(memmapped, 2)
+        startt = time.time()
+        length_siglist = len(siglist)
+        siglist = memmap_siglist(siglist)
+        notify("Created memmapped siglist")
+        func = partial(
+            similarity_args_unpack,
+            siglist=siglist,
+            ignore_abundance=ignore_abundance,
+            downsample=downsample)
+        notify("Created similarity func")
 
-        condensed = []
-        # do some other stuff in the main process
-        pool = ThreadPool(processes=n_jobs)
-        func = partial(similarity, ignore_abundance, False)
-        for sig1, sig2 in sig_iterator:
-            pool.apply_async(func, args=(sig1, sig2), callback=partial(log_result, condensed))
-        pool.close()
-        pool.join()
-        similarities = squareform(condensed)
+        length_combinations = nCr(length_siglist, 2)
+        d = int(np.ceil(np.sqrt(length_combinations * 2)))
 
-        # 'squareform' was made for *distance* matrices not *similarity*
-        # so need to replace diagonal values with 1.
-        # np.fill_digonal modifies 'similarities' in-place
-        np.fill_diagonal(similarities, 1)
-    return similarities
+        # Check that v is of valid dimensions.
+        if d * (d - 1) != length_combinations * 2:
+            raise ValueError('Incompatible vector size. It must be a binomial '
+                             'coefficient n choose 2 for some integer n >= 2.')
+        similarities = np.eye(d, dtype=np.float64)
+        temp_folder = tempfile.mkdtemp()
+        filename = os.path.join(temp_folder, 'similarities.mmap')
+        if os.path.exists(filename):
+            os.unlink(filename)
+        shape = (d, d)
+        memmap_similarities = np.memmap(filename, mode='w+', shape=shape, dtype=np.float64)
+        for i in range(d):
+            memmap_similarities[i, i] = similarities[i, i]
+        notify("Initialized memmapped similarities matrix")
+
+        with multiprocessing.Pool(n_jobs) as pool:
+            chunksize, extra = divmod(length_siglist, n_jobs)
+            if extra:
+                chunksize += 1
+            notify("Calculated chunk size")
+            result = pool.imap(func, range(length_siglist), chunksize=chunksize)
+            notify("Pool.imap completed")
+            for index, l in enumerate(result):
+                startt = time.time()
+                col_idx = index + 1
+                for idx_condensed, item in enumerate(l):
+                    memmap_similarities[index, col_idx + idx_condensed] = memmap_similarities[idx_condensed + col_idx, index] = item
+                notify("setting similarities matrix for index {} done in {:.5f} seconds", index, time.time() - startt)
+            notify("Setting similarities completed")
+
+        del siglist
+        del memmap_similarities
+    large_memmap = np.memmap(filename, dtype=np.float64, shape=shape)
+    notify("time taken to compare all pairs parallely is {:.5f} seconds ", time.time() - startt)
+    return large_memmap

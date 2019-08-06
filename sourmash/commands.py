@@ -466,8 +466,10 @@ def compare(args):
     # do all-by-all calculation
 
     labeltext = [item.name() for item in siglist]
+    notify("similarity before")
     similarity = compare_all_pairs(siglist, args.ignore_abundance,
-                                   args.processes)
+                                   n_jobs=args.processes)
+    notify("similarity after")
 
     if len(siglist) < 30:
         for i, E in enumerate(siglist):
@@ -476,8 +478,6 @@ def compare(args):
             if len(name_num) > 20:
                 name_num = name_num[:17] + '...'
             print_results('{:20s}\t{}'.format(name_num, similarity[i, :, ],))
-
-    print_results('min similarity in matrix: {:.3f}', numpy.min(similarity))
 
     # shall we output a matrix?
     if args.output:
