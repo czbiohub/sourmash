@@ -72,6 +72,13 @@ pub fn draff_compare(sigs: Vec<&str>) -> Result<(), Error> {
     Ok(())
 }
 
+
+// TODO: make barcode optional
+// pub fn draff_bam_to_fasta(bam_file: &str, fasta_files: Vec<&str>, barcode: &str, barcode_to_name: &str) -> Result<(), Error> {
+//     // tenx
+
+// )
+
 pub fn draff_search(index: &str, query: &str) -> Result<(), Error> {
     let index = UKHSTree::from_path(index)?;
 

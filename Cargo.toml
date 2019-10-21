@@ -52,6 +52,7 @@ pdatastructs = { git = "https://github.com/luizirber/pdatastructs.rs", branch = 
 itertools = "0.8.0"
 typed-builder = "0.3.0"
 csv = "1.0.7"
+rust_htslib = "0.26.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen]
 version = "^0.2"
