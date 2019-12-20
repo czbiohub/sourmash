@@ -133,6 +133,84 @@ def test_db_repr():
     assert repr(db) == "LCA_Database('{}')".format(filename)
 
 
+def test_lca_index_signatures_method():
+    # test 'signatures' method from base class Index
+    filename = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(filename)
+
+    siglist = list(db.signatures())
+    assert len(siglist) == 2
+
+
+def test_lca_index_insert_method():
+    # test 'signatures' method from base class Index
+    filename = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(filename)
+
+    sig = next(iter(db.signatures()))
+
+    with pytest.raises(NotImplementedError) as e:
+        db.insert(sig)
+
+
+def test_lca_index_find_method():
+    # test 'signatures' method from base class Index
+    filename = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(filename)
+
+    sig = next(iter(db.signatures()))
+
+    with pytest.raises(NotImplementedError) as e:
+        db.find(None)
+
+
+def test_search_db_scaled_gt_sig_scaled():
+    dbfile = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(dbfile)
+    sig = sourmash.load_one_signature(utils.get_test_data('47.fa.sig'))
+
+    results = db.search(sig, threshold=.01, ignore_abundance=True)
+    match_sig = results[0][1]
+
+    sig.minhash = sig.minhash.downsample_scaled(10000)
+    assert sig.minhash == match_sig.minhash
+
+
+def test_search_db_scaled_lt_sig_scaled():
+    dbfile = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(dbfile)
+    sig = sourmash.load_one_signature(utils.get_test_data('47.fa.sig'))
+    sig.minhash = sig.minhash.downsample_scaled(100000)
+
+    with pytest.raises(ValueError) as e:
+        results = db.search(sig, threshold=.01, ignore_abundance=True)
+
+
+def test_gather_db_scaled_gt_sig_scaled():
+    dbfile = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(dbfile)
+    sig = sourmash.load_one_signature(utils.get_test_data('47.fa.sig'))
+
+    results = db.gather(sig, threshold=.01, ignore_abundance=True)
+    match_sig = results[0][1]
+
+    sig.minhash = sig.minhash.downsample_scaled(10000)
+    assert sig.minhash == match_sig.minhash
+
+
+def test_gather_db_scaled_lt_sig_scaled():
+    dbfile = utils.get_test_data('lca/47+63.lca.json')
+    db, ksize, scaled = lca_utils.load_single_database(dbfile)
+    sig = sourmash.load_one_signature(utils.get_test_data('47.fa.sig'))
+    sig.minhash = sig.minhash.downsample_scaled(100000)
+
+    results = db.gather(sig, threshold=.01, ignore_abundance=True)
+    match_sig = results[0][1]
+
+    match_sig.minhash = match_sig.minhash.downsample_scaled(100000)
+    assert sig.minhash == match_sig.minhash
+
+
 ## command line tests
 
 
@@ -776,6 +854,54 @@ def test_rankinfo_on_single():
         db1 = utils.get_test_data('lca/both.lca.json')
 
         cmd = ['lca', 'rankinfo', db1]
+        status, out, err = utils.runscript('sourmash', cmd)
+
+        print(cmd)
+        print(out)
+        print(err)
+
+        lines = out.splitlines()
+        lines.remove('superkingdom: 0 (0.0%)')
+        lines.remove('phylum: 464 (12.8%)')
+        lines.remove('class: 533 (14.7%)')
+        lines.remove('order: 1050 (29.0%)')
+        lines.remove('family: 695 (19.2%)')
+        lines.remove('genus: 681 (18.8%)')
+        lines.remove('species: 200 (5.5%)')
+        lines.remove('strain: 0 (0.0%)')
+
+        assert not lines
+
+
+def test_rankinfo_no_tax():
+    with utils.TempDirectory() as location:
+        taxcsv = utils.get_test_data('lca/delmont-1.csv')
+        input_sig = utils.get_test_data('lca/TARA_PSW_MAG_00136.sig')
+        lca_db = os.path.join(location, 'delmont-1.lca.json')
+
+        cmd = ['lca', 'index', taxcsv, lca_db, input_sig]
+        status, out, err = utils.runscript('sourmash', cmd)
+
+        print(cmd)
+        print(out)
+        print(err)
+
+        assert os.path.exists(lca_db)
+
+        assert "** assuming column 'MAGs' is identifiers in spreadsheet" in err
+        assert "** assuming column 'Domain' is superkingdom in spreadsheet" in err
+        assert '1 identifiers used out of 1 distinct identifiers in spreadsheet.' in err
+
+        cmd = ['lca', 'rankinfo', lca_db]
+        status, out, err = utils.runscript('sourmash', cmd)
+
+
+def test_rankinfo_with_min():
+    with utils.TempDirectory() as location:
+        db1 = utils.get_test_data('lca/dir1.lca.json')
+        db2 = utils.get_test_data('lca/dir2.lca.json')
+
+        cmd = ['lca', 'rankinfo', db1, db2, '--minimum-num', '1']
         status, out, err = utils.runscript('sourmash', cmd)
 
         print(cmd)
