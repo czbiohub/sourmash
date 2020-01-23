@@ -67,30 +67,9 @@ def hash_murmur(kmer, seed=MINHASH_DEFAULT_SEED):
     return lib.hash_murmur(to_bytes(kmer), seed)
 
 
-def dotproduct(a, b, normalize=True):
-    """
-    Compute the dot product of two dictionaries {k: v} where v is
-    abundance.
-    """
-
-    if normalize:
-        norm_a = math.sqrt(sum([x * x for x in a.values()]))
-        norm_b = math.sqrt(sum([x * x for x in b.values()]))
-
-        if norm_a == 0.0 or norm_b == 0.0:
-            return 0.0
-    else:
-        norm_a = 1.0
-        norm_b = 1.0
-
-    prod = 0.0
-    for k, abundance in a.items():
-        prod += (float(abundance) / norm_a) * (b.get(k, 0) / norm_b)
-
-    return prod
-
-
 class MinHash(RustObject):
+    __dealloc_func__ = lib.kmerminhash_free
+
     def __init__(
         self,
         n,
@@ -121,7 +100,6 @@ class MinHash(RustObject):
         self._objptr = lib.kmerminhash_new(
             n, ksize, is_protein, dayhoff, hp, seed, int(max_hash), track_abundance
         )
-        self.__dealloc_func__ = lib.kmerminhash_free
 
         if mins:
             if track_abundance:
@@ -214,11 +192,10 @@ class MinHash(RustObject):
         if isinstance(hashes, MinHash):
             self._methodcall(lib.kmerminhash_add_from, hashes._objptr)
         else:
-            for hash in hashes:
-                self._methodcall(lib.kmerminhash_add_hash, hash)
+            self._methodcall(lib.kmerminhash_add_many, list(hashes), len(hashes))
 
     def remove_many(self, hashes):
-        "Add many hashes in at once."
+        "Remove many hashes at once."
         self._methodcall(lib.kmerminhash_remove_many, list(hashes), len(hashes))
 
     def update(self, other):
@@ -405,9 +382,7 @@ class MinHash(RustObject):
             err = "must have same num: {} != {}".format(self.num, other.num)
             raise TypeError(err)
         return self._methodcall(lib.kmerminhash_compare, other._get_objptr())
-
-    def jaccard(self, other):
-        return self.compare(other)
+    jaccard = compare
 
     def similarity(self, other, ignore_abundance=False):
         """Calculate similarity of two sketches.
@@ -428,18 +403,12 @@ class MinHash(RustObject):
         if not (self.track_abundance and other.track_abundance) or ignore_abundance:
             return self.jaccard(other)
         else:
-            # can we merge? if not, raise exception.
-            aa = copy.copy(self)
-            aa.merge(other)
+            return self._methodcall(lib.kmerminhash_similarity,
+                                    other._get_objptr(),
+                                    ignore_abundance)
 
-            a = self.get_mins(with_abundance=True)
-            b = other.get_mins(with_abundance=True)
-
-            prod = dotproduct(a, b)
-            prod = min(1.0, prod)
-
-            distance = 2 * math.acos(prod) / math.pi
-            return 1.0 - distance
+    def is_compatible(self, other):
+        return self._methodcall(lib.kmerminhash_is_compatible, other._get_objptr())
 
     def contained_by(self, other):
         """\
@@ -485,38 +454,7 @@ class MinHash(RustObject):
             )
 
     def add_protein(self, sequence):
-        ksize = self.ksize // 3
-        if len(sequence) < ksize:
-            return
-
-        aa_kmers = (sequence[i:i + ksize] for i in range(0, len(sequence) - ksize + 1))
-        if self.is_protein:
-            for aa_kmer in aa_kmers:
-                self._methodcall(
-                    lib.kmerminhash_add_word, to_bytes(aa_kmer)
-        )
-        elif self.dayhoff:
-            for aa_kmer in aa_kmers:
-                dayhoff_kmer = ''
-                for aa in aa_kmer:
-                    data = rustcall(lib.sourmash_aa_to_dayhoff, to_bytes(aa))
-                    dayhoff_letter = data.decode('utf-8')
-                    dayhoff_kmer += dayhoff_letter
-                self._methodcall(
-                    lib.kmerminhash_add_word, to_bytes(dayhoff_kmer)
-                )
-        elif self.hp:
-            for aa_kmer in aa_kmers:
-                hp_kmer = ''
-                for aa in aa_kmer:
-                    data = rustcall(lib.sourmash_aa_to_hp, to_bytes(aa))
-                    hp_letter = data.decode('utf-8')
-                    hp_kmer += hp_letter
-                self._methodcall(
-                    lib.kmerminhash_add_word, to_bytes(hp_kmer)
-                )
-        else:
-            raise ValueError("Invalid protein type")
+        self._methodcall(lib.kmerminhash_add_protein, to_bytes(sequence))
 
     def is_molecule_type(self, molecule):
         if self.is_protein and molecule == 'protein':

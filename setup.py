@@ -8,7 +8,7 @@ DEBUG_BUILD = os.environ.get("SOURMASH_DEBUG") == "1"
 
 
 def build_native(spec):
-    cmd = ["cargo", "build", "--lib"]
+    cmd = ["cargo", "build", "--manifest-path", "src/core/Cargo.toml", "--lib"]
 
     target = "debug"
     if not DEBUG_BUILD:
@@ -62,16 +62,18 @@ SETUP_METADATA = {
         'sourmash = sourmash.__main__:main'
         ]
     },
-    "install_requires": ["screed>=0.9", "ijson>=2.5.1", "khmer>=2.1", 'numpy',
-                         "cffi",
+    "install_requires": ["screed>=0.9", "khmer>=2.1", "cffi", 'numpy',
                          'matplotlib', 'scipy', "deprecation>=2.0.6"],
     "setup_requires": [
         "setuptools>=38.6.0",
         "milksnake",
-        "setuptools_scm",
+        "setuptools_scm>=3.2.0",
         "setuptools_scm_git_archive",
     ],
-    "use_scm_version": {"write_to": "sourmash/version.py"},
+    "use_scm_version": {
+        "write_to": "sourmash/version.py",
+        "git_describe_command": "git describe --dirty --tags --long --match v* --first-parent"
+    },
     "zip_safe": False,
     "platforms": "any",
     "extras_require": {

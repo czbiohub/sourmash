@@ -7,10 +7,12 @@ import json
 import gzip
 from os.path import exists
 from collections import OrderedDict, namedtuple, defaultdict, Counter
+import functools
+
 
 __all__ = ['taxlist', 'zip_lineage', 'build_tree', 'find_lca',
            'load_single_database', 'load_databases', 'gather_assignments',
-           'count_lca_for_assignments', 'LineagePair']
+           'count_lca_for_assignments', 'LineagePair', 'display_lineage']
 
 try:                                      # py2/py3 compat
     from itertools import zip_longest
@@ -23,6 +25,21 @@ from ..index import Index
 
 # type to store an element in a taxonomic lineage
 LineagePair = namedtuple('LineagePair', ['rank', 'name'])
+
+
+def cached_property(fun):
+    """A memoize decorator for class properties."""
+    @functools.wraps(fun)
+    def get(self):
+        try:
+            return self._cache[fun]
+        except AttributeError:
+            self._cache = {}
+        except KeyError:
+            pass
+        ret = self._cache[fun] = fun(self)
+        return ret
+    return property(get)
 
 
 def check_files_exist(*files):
@@ -69,19 +86,34 @@ def zip_lineage(lineage, include_strain=True, truncate_empty=False):
     ['a', '', 'c', '', '', '', '', '']
     """
 
-    row = []
     empty = LineagePair(None, '')
-    for taxrank, lineage_tup in zip_longest(taxlist(include_strain=include_strain), lineage, fillvalue=empty):
-        if lineage_tup == empty:
-            if truncate_empty:
-                break
-        else:
-            # validate non-empty tax, e.g. superkingdom/phylum/class in order.
-            if lineage_tup.rank != taxrank:
-                raise ValueError('incomplete lineage at {} - is {} instead'.format(taxrank, lineage_tup.rank))
+
+    pairs = zip_longest(taxlist(include_strain=include_strain),
+                        lineage, fillvalue=empty)
+    pairs = list(pairs)
+
+    # eliminate empty if so requested
+    if truncate_empty:
+        last_lineage_tup = pairs[-1][1]
+        while pairs and last_lineage_tup == empty:
+            pairs.pop(-1)
+            if pairs:
+                last_lineage_tup = pairs[-1][1]
+
+    row = []
+    for taxrank, lineage_tup in pairs:
+        # validate non-empty tax, e.g. superkingdom/phylum/class in order.
+        if lineage_tup != empty and lineage_tup.rank != taxrank:
+            raise ValueError('incomplete lineage at {} - is {} instead'.format(taxrank, lineage_tup.rank))
 
         row.append(lineage_tup.name)
     return row
+
+
+def display_lineage(lineage, include_strain=True, truncate_empty=True):
+    return ";".join(zip_lineage(lineage,
+                                include_strain=include_strain,
+                                truncate_empty=truncate_empty))
 
 
 # filter function toreplace blank/na/null with 'unassigned'
@@ -147,7 +179,6 @@ class LCA_Database(Index):
     obj.idx_to_lid: key 'idx' to 'lid'
     obj.lid_to_lineage: key 'lid' to tuple of LineagePair objects
     obj.hashval_to_idx: key 'hashval' => set('idx')
-    obj.lineage_to_lid: key (tuple of LineagePair objects) to 'lid'
     """
     def __init__(self):
         self.ksize = None
@@ -155,7 +186,6 @@ class LCA_Database(Index):
         
         self.ident_to_idx = None
         self.idx_to_lid = None
-        self.lineage_to_lid = None
         self.lid_to_lineage = None
         self.hashval_to_idx = None
     
@@ -166,7 +196,6 @@ class LCA_Database(Index):
 
     def signatures(self):
         from .. import SourmashSignature
-        self._create_signatures()
         for v in self._signatures.values():
             yield SourmashSignature(v)
 
@@ -288,12 +317,18 @@ class LCA_Database(Index):
         return results
 
     def gather(self, query, *args, **kwargs):
+        if not query.minhash:
+            return []
+
         results = []
-        for x in self.find_signatures(query.minhash, 0.0,
+        threshold_bp = kwargs.get('threshold_bp', 0.0)
+        threshold = threshold_bp / (len(query.minhash) * self.scaled)
+        for x in self.find_signatures(query.minhash, threshold,
                                       containment=True, ignore_scaled=True):
             (score, match, filename) = x
             if score:
                 results.append((score, match, filename))
+                break
 
         return results
 
@@ -340,23 +375,40 @@ class LCA_Database(Index):
 
         return x
 
-    def _create_signatures(self):
+    @cached_property
+    def _signatures(self):
         "Create a _signatures member dictionary that contains {idx: minhash}."
         from .. import MinHash
 
-        if not hasattr(self, '_signatures'):
-            minhash = MinHash(n=0, ksize=self.ksize, scaled=self.scaled)
+        minhash = MinHash(n=0, ksize=self.ksize, scaled=self.scaled)
 
-            debug('creating signatures for LCA DB...')
-            sigd = defaultdict(minhash.copy_and_clear)
+        debug('creating signatures for LCA DB...')
+        sigd = defaultdict(minhash.copy_and_clear)
+        temp_vals = defaultdict(list)
 
-            for (k, v) in self.hashval_to_idx.items():
-                for vv in v:
-                    sigd[vv].add_hash(k)
+        for (k, v) in self.hashval_to_idx.items():
+            for vv in v:
+                temp_hashes = temp_vals[vv]
+                temp_hashes.append(k)
 
-            self._signatures = sigd
+                # 50 is an arbitrary number. If you really want
+                # to micro-optimize, list is resized and grow in this pattern:
+                # 0, 4, 8, 16, 25, 35, 46, 58, 72, 88, ...
+                # (from https://github.com/python/cpython/blob/b2b4a51f7463a0392456f7772f33223e57fa4ccc/Objects/listobject.c#L57)
+                if len(temp_hashes) > 50:
+                    sigd[vv].add_many(temp_hashes)
 
-        debug('=> {} signatures!', len(self._signatures))
+                    # Sigh, python 2... when it goes away,
+                    # we can do `temp_hashes.clear()` instead.
+                    del temp_vals[vv]
+
+        # We loop temp_vals again to add any remainder hashes
+        # (each list of hashes is smaller than 50 items)
+        for sig, vals in temp_vals.items():
+            sigd[sig].add_many(vals)
+
+        debug('=> {} signatures!', len(sigd))
+        return sigd
 
     def find_signatures(self, minhash, threshold, containment=False,
                        ignore_scaled=False):
@@ -369,16 +421,6 @@ class LCA_Database(Index):
         elif self.scaled < minhash.scaled and not ignore_scaled:
             # note that containment can be calculated w/o matching scaled.
             raise ValueError("lca db scaled is {} vs query {}; must downsample".format(self.scaled, minhash.scaled))
-
-        self._create_signatures()
-
-        # build idx_to_ident from ident_to_idx
-        if not hasattr(self, 'idx_to_ident'):
-            idx_to_ident = {}
-            for k, v in self.ident_to_idx.items():
-                idx_to_ident[v] = k
-
-            self.idx_to_ident = idx_to_ident
 
         query_mins = set(minhash.get_mins())
 
@@ -394,7 +436,6 @@ class LCA_Database(Index):
         for idx, count in c.items():
             ident = self.idx_to_ident[idx]
             name = self.ident_to_name[ident]
-            debug('looking at {} ({})', ident, name)
 
             match_mh = self._signatures[idx]
             match_size = len(match_mh)
@@ -407,13 +448,36 @@ class LCA_Database(Index):
             else:
                 score = count / (len(query_mins) + match_size - count)
 
-            debug('score: {} (containment? {})', score, containment)
+            debug('score: {} (containment? {}), threshold: {}',
+                  score, containment, threshold)
 
             if score >= threshold:
                 from .. import SourmashSignature
                 match_sig = SourmashSignature(match_mh, name=name)
 
                 yield score, match_sig, self.filename
+
+    @cached_property
+    def lineage_to_lids(self):
+        d = defaultdict(set)
+        for lid, lineage in self.lid_to_lineage.items():
+            d[lineage].add(lid)
+        return d
+
+    @cached_property
+    def lid_to_idx(self):
+        d = defaultdict(set)
+        for idx, lid in self.idx_to_lid.items():
+            d[lid].add(idx)
+        return d
+
+    @cached_property
+    def idx_to_ident(self):
+        d = defaultdict(set)
+        for ident, idx in self.ident_to_idx.items():
+            assert idx not in d
+            d[idx] = ident
+        return d
 
 
 def load_single_database(filename, verbose=False):
