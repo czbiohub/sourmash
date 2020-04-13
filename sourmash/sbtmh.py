@@ -149,7 +149,7 @@ class LocalizedSBT(SBT):
 
             return best_result
 
-    def compare_child_leaves(self, children, most_similar_leaf):
+    def get_sibling_of_similar_leaf(self, children, most_similar_leaf):
         # if most similar node has two children already, return node
         # of least similar child (displaced)
         # Get the leaf information of the other child
