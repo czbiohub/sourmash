@@ -138,11 +138,27 @@ class SBT(Index):
         self.next_node = 0
         self.storage = storage
 
-    @property
-    def _missing_nodes(self):
-        return {i for i in range(max(self._nodes))
-                if i not in self._nodes and i not in self._leaves}
+     # TODO: make it into a cached_property, clean it if new node is inserted                                                                     
+     @property
+     def _missing_nodes(self):
+         all_nodes = set()
+         current_level = set()
 
+         for i in self._leaves:
+             parent = self.parent(i)
+             if parent is not None:
+                 current_level.add(parent.pos)
+
+         while current_level:
+             previous_level = set()
+             for i in current_level:
+                 parent = self.parent(i)
+                 if parent is not None:
+                     previous_level.add(parent.pos)
+             all_nodes.update(current_level)
+             current_level = previous_level
+
+         return all_nodes - set(self._nodes)
     def signatures(self):
         for k in self.leaves():
             yield k.data
