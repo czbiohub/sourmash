@@ -24,23 +24,6 @@ WATERMARK_SIZE = 10000
 from .command_compute import compute
 
 
-def info(args):
-    "Report sourmash version + version of installed dependencies."
-    from . import VERSION
-    notify('sourmash version {}', VERSION)
-    notify('- loaded from path: {}', os.path.dirname(__file__))
-    notify('')
-
-    if args.verbose:
-        import khmer
-        notify('khmer version {}', khmer.__version__)
-        notify('- loaded from path: {}', os.path.dirname(khmer.__file__))
-        notify('')
-
-        notify('screed version {}', screed.__version__)
-        notify('- loaded from path: {}', os.path.dirname(screed.__file__))
-
-
 def compare(args):
     "Compare multiple signature files and create a distance matrix."
     import numpy
@@ -376,7 +359,8 @@ def index(args):
     nums = set()
     scaleds = set()
     for f in inp_files:
-        notify('\r...reading from {} ({} signatures so far)', f, n, end='')
+        if n % 100 == 0:
+            notify('\r...reading from {} ({} signatures so far)', f, n, end='')
         siglist = sig.load_signatures(f, ksize=args.ksize,
                                       select_moltype=moltype)
 
