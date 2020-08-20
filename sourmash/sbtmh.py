@@ -186,18 +186,23 @@ class LocalizedSBT(SBT):
 
         return self.next_node
 
-    def get_best_leaf_position(self, node_to_add):
-        best_result = self.find_most_similar_leaf(node_to_add)
+    def get_best_leaf_position(self, leaf_to_add):
+        best_result = self.find_most_similar_leaf(leaf_to_add)
         if best_result is None:
             potential_next_node = self._insert_next_position(self.next_node)
             parent_potential_next_node = self.parent(potential_next_node)
-            if parent_potential_next_node.pos in self._leaves:
+            dissimilar_aunt = self._recurse_up_tree_for_dissimilar_node(
+                parent_potential_next_node,
+                leaf_to_add
+            )
+            # Root node - just add the next position
+            if parent_potential_next_node.pos == 0:
+                # There's an available empty leaf! Put this new one here
+                next_node = potential_next_node
+            else:
                 # No best position for this node. Push current tree down as-is, and
                 # insert this new leaf in adjacent neighbors
                 next_node = self._push_existing_tree_down()
-            else:
-                # There's an available empty leaf! Put this new one here
-                next_node = potential_next_node
             return next_node
 
         new_leaf_similarity, most_similar_leaf, most_similar_pos = best_result
@@ -207,9 +212,10 @@ class LocalizedSBT(SBT):
 
         # If the parent has one child: easy, insert the new child here
         children_of_most_similar_parent = self.children(most_similar_parent.pos)
-        if children_of_most_similar_parent[1].node is None:
+        sibiling = self.get_sibling_of_similar_leaf(children_of_most_similar_parent, most_similar_leaf)
+        if sibiling.node is None:
             # Use the default next node position
-            next_node = self._insert_next_position(self.next_node)
+            next_node = self._insert_next_position(sibiling.pos)
         else:
             next_node = self.maybe_displace_child(
                 new_leaf_similarity,
@@ -254,6 +260,25 @@ class LocalizedSBT(SBT):
             # bottom-up
             next_node = self._push_existing_tree_down()
         return next_node
+
+    def _recurse_up_tree_for_dissimilar_node(self, internal_node, leaf_to_add):
+        """Traverse up the tree to find the first 'aunt' node that is dissimilar"""
+        match = GatherMinHashes().search(internal_node.node, leaf_to_add.data, 0.0)
+
+        # If this node has a match, check that its sibling does not
+        if match:
+            parent = self.parent(internal_node.pos)
+            sibling = self.get_sibling(parent, internal_node.node)
+            sibling_match = GatherMinHashes().search(
+                sibling.node, leaf_to_add.data, 0.0
+            )
+            # Sibling matched, keep going up the tree
+            if sibling_match:
+                return self._recurse_up_tree_for_dissimilar_node(parent, leaf_to_add)
+            else:
+                return parent
+        else:
+            return internal_node
 
     def displace_child_with_new_leaf(self, exists_free_leaf, node_to_displace,
                                      most_similar_leaf):
@@ -307,6 +332,7 @@ class LocalizedSBT(SBT):
 
     def _push_existing_tree_down(self):
         current_tree_depth = int(math.floor(math.log2(max(self._leaves))))
+        new_depth = current_tree_depth + 1
         add_to_leaves = 2 ** current_tree_depth
         add_to_nodes = 2 ** (current_tree_depth - 1)
 
@@ -325,7 +351,7 @@ class LocalizedSBT(SBT):
         # Rebuild new nodes in case they don't exist
         for i in range(min(self._leaves.keys())):
             self._rebuild_internal_nodes_bottom_up(i)
-        next_node = max(new_leaves) + 1
+        next_node = (2 ** new_depth) + (2 ** current_tree_depth) - 1
         return next_node
 
     def _rebuild_internal_nodes_bottom_up(self, pos=None):
